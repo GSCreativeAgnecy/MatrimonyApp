@@ -20,9 +20,19 @@ function cookieOptions(maxAge: number) {
 
 export async function POST(request: NextRequest) {
   // Same-origin check: the refresh cookie is only ever set/read by this BFF.
+  // Compare by HOST only (not full origin): behind a TLS-terminating reverse
+  // proxy (nginx->here) the request's scheme is http while the browser sends
+  // https, so a full-origin compare would 403 every login. Hostname must match.
   const origin = request.headers.get("origin");
-  if (origin && !origin.startsWith(request.nextUrl.origin)) {
-    return NextResponse.json({ error: { code: "CSRF", message: "Cross-origin request rejected" } }, { status: 403 });
+  if (origin) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost !== request.nextUrl.host) {
+        return NextResponse.json({ error: { code: "CSRF", message: "Cross-origin request rejected" } }, { status: 403 });
+      }
+    } catch {
+      return NextResponse.json({ error: { code: "CSRF", message: "Invalid origin" } }, { status: 403 });
+    }
   }
 
   let payload: { email?: string; phone_number?: string; password?: string };

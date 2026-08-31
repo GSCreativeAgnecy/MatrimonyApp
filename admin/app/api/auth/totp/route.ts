@@ -18,9 +18,17 @@ function cookieOptions(maxAge: number) {
 }
 
 export async function POST(request: NextRequest) {
+  // Same-origin check by HOST only (scheme-insensitive) — works behind a
+  // TLS-terminating reverse proxy (see login route).
   const origin = request.headers.get("origin");
-  if (origin && !origin.startsWith(request.nextUrl.origin)) {
-    return NextResponse.json({ error: { code: "CSRF", message: "Cross-origin request rejected" } }, { status: 403 });
+  if (origin) {
+    try {
+      if (new URL(origin).host !== request.nextUrl.host) {
+        return NextResponse.json({ error: { code: "CSRF", message: "Cross-origin request rejected" } }, { status: 403 });
+      }
+    } catch {
+      return NextResponse.json({ error: { code: "CSRF", message: "Invalid origin" } }, { status: 403 });
+    }
   }
 
   let payload: { mfa_token?: string; code?: string };
