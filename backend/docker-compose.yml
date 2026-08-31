@@ -138,6 +138,9 @@ services:
 
       NODE_ENV: production
       PORT: 3001
+      # Next.js standalone binds server.js to process.env.HOSTNAME, which Docker
+      # sets to the container-id -> immediate crash. Force 0.0.0.0.
+      HOSTNAME: 0.0.0.0
 
     expose:
       - "3001"
