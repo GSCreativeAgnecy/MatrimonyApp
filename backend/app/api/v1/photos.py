@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_session
@@ -69,6 +69,21 @@ async def confirm_upload(
     await session.commit()
     data = _serialize_photos(service, [photo])[0]
     return ApiResponse(data=data)
+
+
+@router.post("/upload", summary="Upload a photo file directly", response_model=ApiResponse[PhotoResponse])
+async def upload_photo(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[PhotoResponse]:
+    data = await file.read()
+    service = PhotoService(session)
+    photo = await service.upload_bytes(user, data, file.filename or "photo.jpg", file.content_type or "image/jpeg")
+    await session.commit()
+    result = _serialize_photos(service, [photo])[0]
+    result["url"] = await service.to_public_url(photo.url)
+    return ApiResponse(data=result)
 
 
 @router.patch(

@@ -55,6 +55,16 @@ class PhotoService:
         upload_url = await self._storage().presigned_upload_url(key, content_type=content_type)
         return upload_url, key, 3600
 
+    async def upload_bytes(self, user: User, data: bytes, filename: str, content_type: str) -> Photo:
+        """Upload raw file bytes directly (local/S3) and register the photo."""
+        key = new_object_key(str(user.id), filename, os.path.splitext(filename)[1])
+        await self._storage().put_object(key, data, content_type=content_type)
+        photo = await self.confirm_upload(user, key, content_type=content_type)
+        await self.audit.record(
+            action="photo.upload", actor_user_id=user.id, entity_type="photo", entity_id=str(photo.id)
+        )
+        return photo
+
     async def confirm_upload(self, user: User, object_key: str, *, content_type: str | None = None) -> Photo:
         photo = await self.repo.create(
             user_id=user.id,
