@@ -18,12 +18,17 @@ function cookieOptions(maxAge: number) {
 }
 
 export async function POST(request: NextRequest) {
-  // Same-origin check by HOST only (scheme-insensitive) — works behind a
-  // TLS-terminating reverse proxy (see login route).
+  // Same-origin check using the Host header / known public domains (robust
+  // behind a double reverse proxy — see login route).
   const origin = request.headers.get("origin");
-  if (origin) {
+  if (origin && origin !== "null") {
     try {
-      if (new URL(origin).host !== request.nextUrl.host) {
+      const originHost = new URL(origin).host;
+      const ownHost = request.headers.get("host") ?? "";
+      const allowed = ["ardhangmatrimony.com", "frontseatview.com"];
+      const isSameHost = originHost === ownHost || originHost.endsWith("." + ownHost) || (originHost && ownHost && originHost.split(":")[0] === ownHost.split(":")[0]);
+      const isKnown = allowed.some((d) => originHost.endsWith("." + d) || originHost === d);
+      if (!isSameHost && !isKnown) {
         return NextResponse.json({ error: { code: "CSRF", message: "Cross-origin request rejected" } }, { status: 403 });
       }
     } catch {
