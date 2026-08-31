@@ -8,7 +8,7 @@ import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { apiFetch } from "@/lib/api";
+import { apiFetch , photoUrl } from "@/lib/api";
 import type { ApiEnvelope, PublicProfile, RecommendationFeed, SwipeResponse } from "@/lib/types";
 
 export default function DiscoverPage() {
@@ -93,7 +93,7 @@ export default function DiscoverPage() {
             <div className="aspect-[4/5] w-full bg-gray-200">
               {current.profile_photo ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={current.profile_photo} alt={current.first_name || "profile"} className="h-full w-full object-cover" />
+                <img src={photoUrl(current.profile_photo)} alt={current.first_name || "profile"} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center text-gray-400">
                   <span className="text-5xl">{current.gender === "female" ? "👩" : "👨"}</span>

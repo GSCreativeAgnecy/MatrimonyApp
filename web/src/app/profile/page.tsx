@@ -7,7 +7,7 @@ import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, photoUrl, uploadPhotoFile } from "@/lib/api";
 import type { ApiEnvelope, OwnProfile, Photo } from "@/lib/types";
 
 const TEXT_FIELDS: { key: keyof OwnProfile; label: string; placeholder: string }[] = [
@@ -84,18 +84,7 @@ export default function OwnProfilePage() {
     setPhotoError(null);
     setUploading(true);
     try {
-      const urlRes = await apiFetch<ApiEnvelope<{ upload_url: string; object_key: string }>>("/profile/photos/upload-url", {
-        method: "POST",
-        body: JSON.stringify({ filename: file.name, content_type: file.type }),
-      });
-      // PUT the file directly to the signed URL (usually S3).
-      await fetch(urlRes.data.upload_url, { method: "PUT", body: file });
-      const confirm = await apiFetch<ApiEnvelope<Photo>>("/profile/photos/confirm", {
-        method: "POST",
-        body: JSON.stringify({ object_key: urlRes.data.object_key, content_type: file.type }),
-      });
-      // eslint-disable-next-line no-console
-      console.log("photo confirmed", confirm.data);
+      await uploadPhotoFile(file);
       photos.refetch();
     } catch (e: any) {
       setPhotoError(e?.message || "Photo upload failed.");
@@ -176,7 +165,7 @@ function PhotoSection({
           {photos.map((p) => (
             <div key={p.id} className="h-24 w-24 overflow-hidden rounded-xl border border-gray-200">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.url} alt="" className="h-full w-full object-cover" />
+              <img src={photoUrl(p.url)} alt="" className="h-full w-full object-cover" />
             </div>
           ))}
           <label className="flex h-24 w-24 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 text-xs text-gray-400 hover:border-primary">

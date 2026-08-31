@@ -7,7 +7,7 @@ import { ArrowLeft, Send } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/require-auth";
 import { Button } from "@/components/ui/button";
-import { apiFetch } from "@/lib/api";
+import { apiFetch , photoUrl } from "@/lib/api";
 import type { ApiEnvelope, Message } from "@/lib/types";
 
 export default function ChatPage() {

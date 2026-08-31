@@ -94,3 +94,36 @@ async function tryRefresh(): Promise<boolean> {
 
 // Swipe action types
 export type SwipeAction = "like" | "pass" | "super_like";
+
+/** Resolve a possibly-relative /static/<...> image URL to a full URL on the API host. */
+export function photoUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  if (url.startsWith("http")) return url;
+  if (url.startsWith("/static/")) return `${API_BASE}${url}`;
+  // bare storage key -> served under /static
+  return `${API_BASE}/static/${url.replace(/^\/+/, "")}`;
+}
+
+/** Upload a photo file directly (multipart) to the backend's /upload endpoint. */
+export async function uploadPhotoFile(file: File): Promise<any> {
+  const { access } = tokenStore.get();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_V1}/profile/photos/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${access}` },
+    body: form,
+    credentials: "include",
+  });
+  if (!res.ok) {
+    let code: string | undefined;
+    let message = `Upload failed (${res.status})`;
+    try {
+      const body = await res.json();
+      code = body?.error?.code;
+      message = body?.error?.message || message;
+    } catch {}
+    throw new ApiError(res.status, code, message);
+  }
+  return res.json();
+}

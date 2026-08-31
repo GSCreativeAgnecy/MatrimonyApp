@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MessageCircle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { apiFetch } from "@/lib/api";
+import { apiFetch , photoUrl } from "@/lib/api";
 import type { ApiEnvelope, Conversation } from "@/lib/types";
 
 export default function MessagesPage() {
@@ -45,7 +45,7 @@ export default function MessagesPage() {
               <div className="h-12 w-12 overflow-hidden rounded-full bg-gray-200">
                 {c.other_user_photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={c.other_user_photo} alt="" className="h-full w-full object-cover" />
+                  <img src={photoUrl(c.other_user_photo)} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full items-center justify-center text-gray-300">
                     <MessageCircle size={20} />

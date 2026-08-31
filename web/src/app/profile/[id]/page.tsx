@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { apiFetch } from "@/lib/api";
+import { apiFetch , photoUrl } from "@/lib/api";
 import type { ApiEnvelope, PublicProfile } from "@/lib/types";
 import { Briefcase, MapPin, GraduationCap } from "lucide-react";
 
@@ -35,7 +35,7 @@ export default function ProfileViewPage() {
               <div className="aspect-[4/5] w-full bg-gray-200">
                 {p.profile_photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.profile_photo} alt={p.first_name || "profile"} className="h-full w-full object-cover" />
+                  <img src={photoUrl(p.profile_photo)} alt={p.first_name || "profile"} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full items-center justify-center text-6xl text-gray-300">
                     {p.gender === "female" ? "👩" : "👨"}

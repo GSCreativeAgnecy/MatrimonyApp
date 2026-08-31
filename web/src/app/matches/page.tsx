@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Heart } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { apiFetch } from "@/lib/api";
+import { apiFetch , photoUrl } from "@/lib/api";
 import type { ApiEnvelope, MatchResponse } from "@/lib/types";
 
 export default function MatchesPage() {
@@ -40,7 +40,7 @@ export default function MatchesPage() {
                 <div className="aspect-square w-full bg-gray-200">
                   {m.profile_photo ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={m.profile_photo} alt={m.first_name || "match"} className="h-full w-full object-cover" />
+                    <img src={photoUrl(m.profile_photo)} alt={m.first_name || "match"} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full items-center justify-center text-4xl text-gray-300">
                       <Heart />
