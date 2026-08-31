@@ -232,7 +232,11 @@ class RecommendationService:
         items = await self._load_cached(key)
         if items is None:
             items = await self._compute_feed(viewer)
-            await self._cache(key, items)
+            # Only cache non-empty feeds. An empty feed usually means the viewer
+            # has no profile yet (or no candidates), and caching it would hide a
+            # freshly-created profile / new members for the whole TTL.
+            if items:
+                await self._cache(key, items)
 
         start = int(cursor) if cursor and cursor.isdigit() else 0
         page = items[start : start + limit]
