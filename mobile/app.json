@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Ardhang Matrimony",
+    "slug": "ardhang-matrimony",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "in.ardhang.mobile",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "The app accesses your photos to let you add profile pictures.",
+        "NSCameraUsageDescription": "The app uses the camera to take a profile photo."
+      }
+    },
+    "android": {
+      "package": "in.ardhang.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#7A1730",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you add profile pictures.",
+          "cameraPermission": "The app uses the camera to take a profile photo."
+        }
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "appEnv": "development",
+      "apiBaseUrl": "http://localhost:8000"
+    }
+  }
+}
