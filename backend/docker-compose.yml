@@ -30,9 +30,7 @@ services:
     build: .
 
     command: >
-      uvicorn app.main:app
-      --host 0.0.0.0
-      --port 8000
+      sh -c "alembic upgrade head && python -m app.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
     expose:
       - "8000"
@@ -54,6 +52,10 @@ services:
       # ["https://your-domain.com"]
       CORS_ORIGINS: ${CORS_ORIGINS:-[]}
 
+      # Seed admin (created by the migration/seed step on startup).
+      DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-}
+      DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-}
+
     volumes:
       - appstorage:/app/storage
 
@@ -62,8 +64,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
 
     restart: unless-stopped
 
@@ -106,8 +106,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
+      api:
+        condition: service_healthy
 
     restart: unless-stopped
 
@@ -202,39 +202,6 @@ services:
       retries: 10
 
     restart: unless-stopped
-
-  migrate:
-    build: .
-
-    command: >
-      sh -c "alembic upgrade head && python -m app.seed"
-
-    environment:
-      DATABASE_URL: postgresql+asyncpg://matchmake:${POSTGRES_PASSWORD}@postgres:5432/matchmaking
-      REDIS_URL: redis://redis:6379/0
-      ARQ_REDIS_URL: redis://redis:6379/1
-
-      STORAGE_BACKEND: local
-      LOCAL_STORAGE_PATH: /app/storage
-
-      ENVIRONMENT: production
-
-      # Optional seed admin.
-      # Leave empty in production unless you explicitly want
-      # the seed process to create this account.
-      DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-}
-      DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-}
-
-    volumes:
-      - appstorage:/app/storage
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-    # This is a one-shot job. It should run migrations and exit.
-    exclude_from_hc: true
-
 
 volumes:
   pgdata:
