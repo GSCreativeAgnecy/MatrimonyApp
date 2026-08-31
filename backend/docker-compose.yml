@@ -126,7 +126,7 @@ services:
 
   admin:
     build:
-      context: ./admin
+      context: ../admin
       args:
         # Browser uses same-origin requests through nginx.
         # Do not put secrets in NEXT_PUBLIC_* variables.
