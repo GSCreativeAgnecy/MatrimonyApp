@@ -23,16 +23,14 @@ async def payment_webhook(
     if provider_obj.name != provider:
         raise UnauthorizedError("Unknown payment provider", code="UNKNOWN_PROVIDER")
 
-    try:
-        payload = await request.json()
-    except Exception:
-        raise UnauthorizedError("Invalid webhook payload", code="INVALID_WEBHOOK") from None
-
+    # The raw body is required for signature verification (e.g. Stripe HMAC).
+    raw_body = await request.body()
     headers = {k.lower(): v for k, v in request.headers.items()}
-    if not await provider_obj.verify_webhook(payload, headers):
+    event = await provider_obj.parse_webhook(raw_body, headers)
+    if event is None:
         raise UnauthorizedError("Webhook signature verification failed", code="WEBHOOK_UNAUTHORIZED")
 
     service = PaymentService(session)
-    result = await service.handle_webhook(provider, payload)
+    result = await service.handle_webhook(provider, event)
     await session.commit()
     return ApiResponse(data=result)

@@ -233,4 +233,3 @@ def downgrade() -> None:
     op.drop_table("role_permissions")
 
     _recreate_user_role_check(allow_new_roles=False)
-

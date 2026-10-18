@@ -152,6 +152,9 @@ class TestPhotoModeration:
             json={"filename": "pic.jpg", "content_type": "image/jpeg"},
         )
         key = resp.json()["data"]["object_key"]
+        from app.services.storage import build_storage
+
+        await build_storage().put_object(key, b"\xff\xd8\xff\xe0" + b"0" * 32)
         await client.post(
             "/api/v1/profile/photos/confirm",
             headers=auth_headers(tokens),

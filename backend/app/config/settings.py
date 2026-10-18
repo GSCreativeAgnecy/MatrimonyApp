@@ -1,7 +1,11 @@
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_JWT_SECRET = "change-me-in-production"
+_DEFAULT_WEBHOOK_SECRET = "change-me-webhook-secret"
+_ALLOWED_PAYMENT_PROVIDERS = {"mock", "stripe"}
 
 
 class Settings(BaseSettings):
@@ -25,7 +29,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # JWT
-    JWT_SECRET_KEY: str = "change-me-in-production"
+    JWT_SECRET_KEY: str = _DEFAULT_JWT_SECRET
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
@@ -42,9 +46,12 @@ class Settings(BaseSettings):
     LOCAL_STORAGE_PATH: str = "./storage"
 
     # Payments
-    PAYMENT_PROVIDER: str = "mock"  # mock | stripe | razorpay
+    PAYMENT_PROVIDER: str = "mock"  # mock | stripe
     PAYMENT_API_KEY: str | None = None
-    PAYMENT_WEBHOOK_SECRET: str = "change-me-webhook-secret"
+    PAYMENT_WEBHOOK_SECRET: str = _DEFAULT_WEBHOOK_SECRET
+    # Escape hatch for demo/staging deployments that intentionally run the mock
+    # provider with ENVIRONMENT=production. Never enable in a real production.
+    ALLOW_MOCK_PAYMENTS: bool = False
 
     # Email / SMS
     SMTP_HOST: str = "localhost"
@@ -65,6 +72,10 @@ class Settings(BaseSettings):
 
     # Worker
     ARQ_REDIS_URL: str = "redis://localhost:6379/1"
+    # Set false for local development without Redis/worker: background jobs are
+    # skipped instead of retrying (which adds ~10s to requests). Production keeps
+    # jobs enabled; enqueueing is fail-open either way.
+    ENQUEUE_JOBS: bool = True
 
     # Lookups / pricing config
     LOCAL_JOB_VERIFICATION_PRICE: int = 119
@@ -79,6 +90,38 @@ class Settings(BaseSettings):
     @classmethod
     def _default_scheme(cls, v: str) -> str:
         return v
+
+    @field_validator("PAYMENT_PROVIDER")
+    @classmethod
+    def _known_payment_provider(cls, v: str) -> str:
+        provider = (v or "").strip().lower()
+        if provider not in _ALLOWED_PAYMENT_PROVIDERS:
+            raise ValueError(f"PAYMENT_PROVIDER must be one of {sorted(_ALLOWED_PAYMENT_PROVIDERS)}, got {v!r}")
+        return provider
+
+    @model_validator(mode="after")
+    def _production_safety(self) -> "Settings":
+        """Fail fast on insecure production configuration instead of booting unsafely."""
+        if not self.is_production:
+            return self
+
+        errors: list[str] = []
+        if self.JWT_SECRET_KEY == _DEFAULT_JWT_SECRET or len(self.JWT_SECRET_KEY) < 32:
+            errors.append("JWT_SECRET_KEY must be set to a random value of at least 32 characters in production")
+        if self.PAYMENT_PROVIDER == "mock" and not self.ALLOW_MOCK_PAYMENTS:
+            errors.append(
+                "PAYMENT_PROVIDER=mock is not allowed in production (the mock provider accepts webhooks "
+                "without a real payment). Set PAYMENT_PROVIDER to a real provider, or explicitly set "
+                "ALLOW_MOCK_PAYMENTS=true for a demo deployment."
+            )
+        if self.PAYMENT_PROVIDER == "stripe":
+            if not self.PAYMENT_API_KEY:
+                errors.append("PAYMENT_API_KEY is required when PAYMENT_PROVIDER=stripe")
+            if self.PAYMENT_WEBHOOK_SECRET in {_DEFAULT_WEBHOOK_SECRET, ""}:
+                errors.append("PAYMENT_WEBHOOK_SECRET must be set when PAYMENT_PROVIDER=stripe")
+        if errors:
+            raise ValueError("Insecure production configuration: " + "; ".join(errors))
+        return self
 
     @property
     def is_production(self) -> bool:

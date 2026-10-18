@@ -55,6 +55,8 @@ app/
 ├── seed.py                  # idempotent seed script (python -m app.seed)
 ├── utils/                   # currently empty; add cross-cutting helpers here
 admin/                       # Admin web dashboard (Next.js, separate deployable app)
+web/                         # End-user Next.js web client (separate deployable; BFF auth)
+mobile/                      # Expo React Native app
 migrations/                  # Alembic (async env.py), versions/
 tests/                       # pytest suite (SQLite in-memory, no Postgres/Redis)
 docs/architecture.md         # full design doc: ERD, enums, indexes, endpoints, designs
@@ -68,7 +70,7 @@ docs/admin-dashboard.md      # admin dashboard architecture, setup, permissions,
 ```bash
 # Install (Windows)
 .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install --group dev -e .   # package + dev tools (PEP 735; pip >= 25.1)
 
 # Tests (SQLite in-memory; NO Postgres or Redis needed)
 pytest                                   # full suite
@@ -138,12 +140,15 @@ docker compose up --build
 | `STORAGE_BACKEND` | `local` (dev) or `s3` |
 | `S3_*` | S3-compatible storage endpoint/bucket/keys/region/expiry |
 | `LOCAL_STORAGE_PATH` | Filesystem root for `local` backend |
-| `PAYMENT_PROVIDER` | `mock` (dev) or `stripe` |
+| `PAYMENT_PROVIDER` | `mock` (dev) or `stripe` (production; mock refused in prod unless `ALLOW_MOCK_PAYMENTS=true`) |
 | `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET` | Provider keys / webhook verification |
+| `ALLOW_MOCK_PAYMENTS` | Explicit opt-in for mock payments in production (demo deployments only) |
+| `TRUSTED_PROXY_COUNT` | Number of reverse proxies in front of the app; `X-Forwarded-For` is only trusted when > 0 |
 | `SMTP_*`, `SMS_PROVIDER` | Email/SMS delivery |
 | `RATE_LIMIT_ENABLED`, `LOGIN_RATE_LIMIT`, `OTP_RATE_LIMIT` | Rate limiting (e.g. `10/15m`) |
 | `CORS_ORIGINS` | Allowed origins (JSON list) |
 | `APP_CONFIG_CACHE_TTL`, `APP_CONFIG_CACHE_KEY` | Public app-config Redis cache (TTL seconds, key name) |
+| `ENQUEUE_JOBS` | Set `false` locally without Redis/worker: background jobs are skipped instead of retrying (default `true`) |
 | `LOCAL_JOB_VERIFICATION_PRICE`, `NRI_JOB_VERIFICATION_PRICE` | Fallback verification pricing (DB `app_config` takes precedence) |
 
 ---
@@ -360,11 +365,15 @@ Candidate Generation -> Hard Filters -> Scoring -> Ranking -> Feed
 
 ## 15. Payments & verification
 
-- `PaymentProvider` protocol in `payment_service.py` (`mock` in dev, `stripe` pluggable). `build_provider()` selects by `PAYMENT_PROVIDER`.
-- Webhook endpoint: `POST /api/v1/payments/webhook/{provider}` verifies signature, then `handle_webhook` is **idempotent**:
+- `PaymentProvider` protocol in `payment_service.py` (`mock` in dev, `stripe` in production). `build_provider()` selects by `PAYMENT_PROVIDER` and **raises on unknown providers** — it never silently falls back to mock.
+- Webhooks are verified from the **raw request body**: `parse_webhook(raw_body, headers)` on the provider both verifies and normalizes the event (`{"provider_payment_id", "payment_id", "status", "failure_reason"}`), or returns `None` (→ `401 WEBHOOK_UNAUTHORIZED`). The router must pass `await request.body()`, never the parsed JSON (Stripe HMAC needs the exact bytes).
+  - Stripe: signature via `Webhook.construct_event`; event type/payment id/metadata normalized from `data.object`.
+  - Mock: requires header `x-mock-webhook-secret` matching `settings.PAYMENT_WEBHOOK_SECRET` (constant-time compare). Never accept unauthenticated mock webhooks.
+- `handle_webhook` applies the already-verified event **idempotently**:
   - resolve by `provider_payment_id` → fall back to internal payment UUID (mock/webhook-retry convenience);
   - already-terminal payments return `{"status": "duplicate"}`;
   - success → `payment.status = SUCCESS`, then downstream transition (subscription activation or job verification → `UNDER_REVIEW`) via `_mark_success`.
+- **Production fail-fast (`settings._production_safety`)**: with `ENVIRONMENT=production` the app refuses to boot when `PAYMENT_PROVIDER=mock` (unless `ALLOW_MOCK_PAYMENTS=true`, demo only), when `JWT_SECRET_KEY` is default/<32 chars, or when Stripe is selected without `PAYMENT_API_KEY`/`PAYMENT_WEBHOOK_SECRET`. Never weaken these checks to make a deploy boot.
 - Job verification pricing is DB-driven from `app_config` (`pricing.local_job_verification=119`, `pricing.nri_job_verification=199`, legacy keys + `settings` fallback). Never hardcode pricing in logic.
 - Status machine: `PENDING_PAYMENT -> UNDER_REVIEW -> VERIFIED | REJECTED | EXPIRED`.
 
@@ -400,7 +409,12 @@ Candidate Generation -> Hard Filters -> Scoring -> Ranking -> Feed
 
 - `StorageBackend` protocol (`put_object`, `delete_object`, `object_exists`, `presigned_upload_url`, `presigned_download_url`) with `LocalStorage` and `S3Storage` implementations (`app/services/storage.py`).
 - Routers depend on the protocol via `get_storage()`; never reference boto3 in routers.
-- Photo flow: `POST /profile/photos/upload-url` → client uploads to signed URL → `POST /profile/photos/confirm` records the object key as a `Photo` row. DB stores the object key, never image binary.
+- Photo flow: `POST /profile/photos/upload-url` → client uploads to signed URL → `POST /profile/photos/confirm` records the object key as a `Photo` row. `POST /profile/photos/upload` (multipart) is the direct-upload variant. DB stores the object key, never image binary.
+- **Upload validation (`photo_service`) — never trust the client:**
+  - size: empty → `422 PHOTO_EMPTY`, over `MAX_PHOTO_SIZE_MB` → `422 PHOTO_TOO_LARGE`;
+  - type: derived from **magic bytes** (`_sniff_image`: jpeg/png/gif/webp/heic/heif), never from the client MIME/filename; the stored key extension is the sniffed one;
+  - `request_upload` requires the filename extension and `content_type` to agree with the allowlist (`_EXT_TO_MIME`);
+  - `confirm_upload` requires `object_key.startswith("photos/{user.id}/")` (`422 INVALID_OBJECT_KEY`) and the object to actually exist in storage (`404 PHOTO_OBJECT_NOT_FOUND`); a client MIME outside the allowlist is replaced with the key-derived one.
 - `PhotoService.to_public_url()` converts stored keys to presigned/public URLs when serializing.
 
 ---
@@ -446,6 +460,12 @@ Candidate Generation -> Hard Filters -> Scoring -> Ranking -> Feed
 - Adding a second FK from a table to `users` makes `User.profile`/`Profile.user` ambiguous — declare `foreign_keys` on the relationship.
 - `require_permission` depends on the session too — the endpoint must still declare `Depends(get_session)` (the session is shared/cached per request, not duplicated).
 - Admin aggregates must use indexed/aggregate queries, never `SELECT *` + Python sums over the whole table (see `admin_analytics_service.py`).
+- Payment webhook verification must use the **raw request body** (`await request.body()`); passing parsed JSON breaks Stripe HMAC verification. Normalize events via `provider.parse_webhook()`.
+- Never reintroduce a "default to mock" fallback in `build_provider()` — unknown `PAYMENT_PROVIDER` values must raise.
+- Mock webhook tests must send the `x-mock-webhook-secret` header (use `webhook_headers()` from `tests/conftest.py`).
+- Photo uploads must go through `PhotoService` validation (magic bytes + size + `photos/{user_id}/` prefix + `object_exists`); never create `Photo` rows from unvalidated client keys.
+- `settings._production_safety` deliberately fails boot on insecure production config (default JWT secret, mock payments, missing Stripe keys) — do not relax it.
+- Auth token responses include `refresh_expires_in` (seconds) alongside `expires_in`; BFF cookie lifetimes must use it, not `expires_in`.
 
 ---
 

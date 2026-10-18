@@ -70,9 +70,9 @@ tests/                      # pytest suite (SQLite)
 docker compose up --build
 ```
 
-This starts `api`, `worker`, `postgres`, `redis`, and a one-shot `migrate` service (runs `alembic upgrade head` + seed).
+This starts `api`, `worker`, `admin`, `web`, `postgres`, `redis` and a single public `proxy` (nginx). The `api` container runs `alembic upgrade head` and the idempotent seed before starting uvicorn.
 
-- API: http://localhost:8000
+- API (via proxy): http://localhost:8000 — or the proxy's port for admin routes
 - Docs (dev): http://localhost:8000/docs
 
 ## Manual Setup
@@ -82,7 +82,7 @@ This starts `api`, `worker`, `postgres`, `redis`, and a one-shot `migrate` servi
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install --group dev -e .     # installs the package + dev tools (pip >= 25.1)
 ```
 
 ### 2. Configure environment variables
@@ -293,8 +293,9 @@ Candidate Generation -> Hard Filters -> Compatibility Scoring -> Ranking -> Feed
 
 ## Payments & Verification Architecture
 
-- `PaymentProvider` protocol (`mock`, `stripe`) ΓÇö webhooks are the only source of truth; status is verified and applied idempotently by `provider_payment_id`.
-- Successful subscription payment ΓåÆ subscription created/extended (`is_premium` is derived, never stored as a source of truth).
+- `PaymentProvider` protocol (`mock` dev/demo, `stripe` production) — webhooks are the only source of truth; status is verified from the raw request body and applied idempotently by `provider_payment_id`.
+- The mock provider requires a shared-secret header (`x-mock-webhook-secret`); production refuses to boot with the mock provider unless `ALLOW_MOCK_PAYMENTS=true` is explicitly set.
+- Successful subscription payment → subscription created/extended (`is_premium` is derived, never stored as a source of truth).
 - Job verification is paid: pricing is read from the `app_config` table (`LOCAL_JOB_VERIFICATION_PRICE`, `NRI_JOB_VERIFICATION_PRICE`).
 - Verification status changes only via `VERIFIER`/`ADMIN` review or trusted webhook transitions.
 

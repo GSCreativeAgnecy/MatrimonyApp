@@ -7,6 +7,11 @@ logger = logging.getLogger("app.enqueue")
 
 
 async def enqueue_job(job_name: str, *args: Any, _defer_seconds: int | None = None) -> None:
+    from app.config.settings import settings
+
+    if not settings.ENQUEUE_JOBS:
+        logger.debug("Job %s skipped (ENQUEUE_JOBS=false)", job_name)
+        return
     try:
         from arq.connections import ArqRedis, create_pool
 

@@ -43,6 +43,11 @@ class TestObjectAuthorization:
         assert req.status_code == 200
         object_key = req.json()["data"]["object_key"]
 
+        # Simulate the client uploading the file through the signed URL.
+        from app.services.storage import build_storage
+
+        await build_storage().put_object(object_key, b"\xff\xd8\xff\xe0" + b"0" * 32)
+
         confirm = await client.post(
             "/api/v1/profile/photos/confirm",
             headers=auth_headers(tokens_a),

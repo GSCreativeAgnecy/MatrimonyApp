@@ -2,7 +2,7 @@ from sqlalchemy import select
 
 from app.db.enums import UserRole
 from app.db.models import JobVerification, User
-from tests.conftest import auth_headers, create_full_profile, register_user, unique_email
+from tests.conftest import auth_headers, create_full_profile, register_user, unique_email, webhook_headers
 
 
 class TestJobVerification:
@@ -85,6 +85,7 @@ class TestAdminReview:
             await client.post(
                 "/api/v1/payments/webhook/mock",
                 json={"event": {"provider_payment_id": payment_id, "status": "SUCCESS"}},
+                headers=webhook_headers(),
             )
 
         resp = await client.get("/api/v1/verifications", headers=auth_headers(tokens))

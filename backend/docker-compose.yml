@@ -47,6 +47,16 @@ services:
 
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
 
+      # Payments. The API refuses to boot in production with the mock provider
+      # unless ALLOW_MOCK_PAYMENTS=true (demo deployments only).
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:?PAYMENT_PROVIDER must be set (stripe)}
+      PAYMENT_API_KEY: ${PAYMENT_API_KEY:-}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET must be set}
+      ALLOW_MOCK_PAYMENTS: ${ALLOW_MOCK_PAYMENTS:-false}
+
+      # Coolify edge proxy + nginx => 2 trusted proxies for audit-log IPs.
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-2}
+
       # Leave as [] when browser and API use the same origin.
       # If you need cross-origin requests, set this in Coolify to:
       # ["https://your-domain.com"]
@@ -97,6 +107,11 @@ services:
       ENVIRONMENT: production
 
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
+
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:?PAYMENT_PROVIDER must be set (stripe)}
+      PAYMENT_API_KEY: ${PAYMENT_API_KEY:-}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?PAYMENT_WEBHOOK_SECRET must be set}
+      ALLOW_MOCK_PAYMENTS: ${ALLOW_MOCK_PAYMENTS:-false}
 
     volumes:
       - appstorage:/app/storage
@@ -166,9 +181,46 @@ services:
       retries: 5
       start_period: 10s
 
+  # End-user web client. Served on its own public domain via Coolify; the
+  # admin nginx proxy intentionally does NOT route to it.
+  web:
+    build:
+      context: ../web
+      args:
+        # Absolute API origin baked into the browser bundle at build time.
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-https://api.ardhangmatrimony.com}
+
+    environment:
+      # Server-side BFF → FastAPI over the private Compose network.
+      WEB_API_URL: http://api:8000
+
+      NODE_ENV: production
+      PORT: 3000
+      # Next.js standalone binds to process.env.HOSTNAME; force 0.0.0.0.
+      HOSTNAME: 0.0.0.0
+
+    expose:
+      - "3000"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:3000/"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   postgres:
     image: postgres:16-alpine
-
     environment:
       POSTGRES_USER: matchmake
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}

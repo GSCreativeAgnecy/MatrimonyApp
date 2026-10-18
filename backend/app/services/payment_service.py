@@ -3,7 +3,9 @@
 Never trust client-sent payment status. The provider webhook is the only source of truth.
 """
 
+import json
 import logging
+import secrets
 from datetime import UTC
 from decimal import Decimal
 from typing import Any, Protocol
@@ -30,17 +32,43 @@ class PaymentProvider(Protocol):
         """Return dict with at least {'checkout_url', 'provider_payment_id'}."""
         ...
 
-    async def verify_webhook(self, payload: dict[str, Any], headers: dict[str, str]) -> bool: ...
+    async def parse_webhook(self, raw_body: bytes, headers: dict[str, str]) -> dict[str, Any] | None:
+        """Verify a webhook request and return a normalized event, or None when invalid.
+
+        Normalized shape: ``{"provider_payment_id", "payment_id", "status", "failure_reason"}``.
+        """
+        ...
 
     async def refund(self, provider_payment_id: str) -> bool:
         """Best-effort refund. Returns False when the provider cannot refund."""
         return False
 
 
+def _normalize_event(
+    *,
+    provider_payment_id: str | None,
+    payment_id: str | None,
+    status: str,
+    failure_reason: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "provider_payment_id": provider_payment_id,
+        "payment_id": payment_id,
+        "status": status.upper(),
+        "failure_reason": failure_reason,
+    }
+
+
 class MockPaymentProvider:
-    """Development provider: fake checkout + accepts all webhooks."""
+    """Development provider: fake checkout + webhooks gated by a shared secret header.
+
+    The webhook secret is required so the mock provider can never be used to
+    activate payments without holding the server-side secret, even if the mock
+    provider is explicitly allowed outside development.
+    """
 
     name = "mock"
+    SECRET_HEADER = "x-mock-webhook-secret"
 
     async def create_checkout_session(
         self, *, amount: Decimal, currency: str, metadata: dict[str, Any]
@@ -50,8 +78,23 @@ class MockPaymentProvider:
             "provider_payment_id": f"mock_{metadata['payment_id']}",
         }
 
-    async def verify_webhook(self, payload: dict[str, Any], headers: dict[str, str]) -> bool:
-        return True
+    async def parse_webhook(self, raw_body: bytes, headers: dict[str, str]) -> dict[str, Any] | None:
+        provided = headers.get(self.SECRET_HEADER, "")
+        expected = settings.PAYMENT_WEBHOOK_SECRET
+        if not provided or not expected or not secrets.compare_digest(provided, expected):
+            logger.warning("Mock webhook rejected: missing/invalid %s header", self.SECRET_HEADER)
+            return None
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return None
+        event = payload.get("event") or payload
+        return _normalize_event(
+            provider_payment_id=str(event.get("provider_payment_id") or "") or None,
+            payment_id=str(event.get("payment_id") or "") or None,
+            status=str(event.get("status", "SUCCESS")),
+            failure_reason=event.get("failure_reason"),
+        )
 
     async def refund(self, provider_payment_id: str) -> bool:
         return True
@@ -59,6 +102,9 @@ class MockPaymentProvider:
 
 class StripePaymentProvider:
     name = "stripe"
+
+    _SUCCESS_EVENTS = {"checkout.session.completed", "payment_intent.succeeded"}
+    _FAILURE_EVENTS = {"payment_intent.payment_failed", "checkout.session.expired"}
 
     def _api(self):
         import stripe
@@ -90,32 +136,53 @@ class StripePaymentProvider:
         )
         return {"checkout_url": session.url, "provider_payment_id": session.id}
 
-    async def verify_webhook(self, payload: dict[str, Any], headers: dict[str, str]) -> bool:
+    async def parse_webhook(self, raw_body: bytes, headers: dict[str, str]) -> dict[str, Any] | None:
+        if not raw_body:
+            return None
         try:
             from stripe import Webhook
 
             event = Webhook.construct_event(
-                payload.get("_raw", ""),
+                raw_body,
                 headers.get("stripe-signature", ""),
                 settings.PAYMENT_WEBHOOK_SECRET,
             )
-            return event.type in {
-                "checkout.session.completed",
-                "payment_intent.succeeded",
-                "payment_intent.payment_failed",
-            }
         except Exception:
             logger.exception("Stripe webhook verification failed")
-            return False
+            return None
+
+        event_type = event.get("type", "")
+        if event_type not in self._SUCCESS_EVENTS | self._FAILURE_EVENTS:
+            return None
+
+        obj = (event.get("data") or {}).get("object") or {}
+        metadata = obj.get("metadata") or {}
+        status = "SUCCESS" if event_type in self._SUCCESS_EVENTS else "FAILED"
+        failure_reason = None
+        if status == "FAILED":
+            last_error = obj.get("last_payment_error") or {}
+            failure_reason = last_error.get("message")
+        return _normalize_event(
+            provider_payment_id=str(obj.get("id") or "") or None,
+            payment_id=str(metadata.get("payment_id") or "") or None,
+            status=status,
+            failure_reason=failure_reason,
+        )
 
     async def refund(self, provider_payment_id: str) -> bool:
         try:
             from stripe import Refund
 
-            await _run_in_thread(
-                Refund.create,
-                payment_intent=provider_payment_id,
-            )
+            if not provider_payment_id:
+                return False
+            payment_intent = provider_payment_id
+            if provider_payment_id.startswith("cs_"):
+                stripe = self._api()
+                session = await _run_in_thread(stripe.checkout.Session.retrieve, provider_payment_id)
+                payment_intent = session.get("payment_intent") or ""
+                if not payment_intent:
+                    return False
+            await _run_in_thread(Refund.create, payment_intent=payment_intent)
             return True
         except Exception:
             logger.exception("Stripe refund failed for %s", provider_payment_id)
@@ -129,9 +196,13 @@ async def _run_in_thread(func, *args, **kwargs):
 
 
 def build_provider() -> PaymentProvider:
-    if settings.PAYMENT_PROVIDER == "stripe":
+    provider = (settings.PAYMENT_PROVIDER or "").strip().lower()
+    if provider == "stripe":
         return StripePaymentProvider()
-    return MockPaymentProvider()
+    if provider == "mock":
+        return MockPaymentProvider()
+    # Never silently fall back to the mock provider for an unknown name.
+    raise AppError(f"Unsupported payment provider: {settings.PAYMENT_PROVIDER!r}", code="UNSUPPORTED_PROVIDER")
 
 
 class PaymentService:
@@ -175,13 +246,11 @@ class PaymentService:
             "currency": currency,
         }
 
-    async def handle_webhook(self, provider_name: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Verifies the webhook, updates the payment, and runs downstream transitions idempotently."""
+    async def handle_webhook(self, provider_name: str, event: dict[str, Any]) -> dict[str, Any]:
+        """Applies an already-verified, normalized provider event idempotently."""
         if provider_name != self.provider.name:
-            # Fall back: try the requested provider, else reject.
             raise AppError("Unknown payment provider", code="UNKNOWN_PROVIDER")
 
-        event = payload.get("event") or payload
         payment_id = str(event.get("provider_payment_id") or event.get("payment_id") or "")
         status = str(event.get("status", "SUCCESS")).upper()
 

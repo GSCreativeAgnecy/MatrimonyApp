@@ -2,12 +2,15 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { tokenStore } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 export default function HomePage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
+
   useEffect(() => {
-    router.replace(tokenStore.get().access ? "/discover" : "/login");
-  }, [router]);
+    if (!loading) router.replace(user ? "/discover" : "/login");
+  }, [loading, user, router]);
+
   return null;
 }

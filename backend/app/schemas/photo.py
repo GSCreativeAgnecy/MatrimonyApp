@@ -12,7 +12,7 @@ class PhotoUploadUrlRequest(BaseModel):
     @field_validator("content_type")
     @classmethod
     def _allowed_types(cls, v: str) -> str:
-        allowed = {"image/jpeg", "image/png", "image/webp", "image/heic"}
+        allowed = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"}
         if v not in allowed:
             raise ValueError(f"Unsupported content type: {v}")
         return v

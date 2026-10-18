@@ -105,6 +105,11 @@ def auth_headers(tokens: dict) -> dict:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
+def webhook_headers() -> dict:
+    """Headers for the mock payment provider's webhook (shared-secret gated)."""
+    return {"x-mock-webhook-secret": settings.PAYMENT_WEBHOOK_SECRET}
+
+
 async def create_full_profile(client: AsyncClient, tokens: dict, gender: str = "FEMALE") -> dict:
     resp = await client.post(
         "/api/v1/profile",

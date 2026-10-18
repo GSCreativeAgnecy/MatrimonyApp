@@ -1,5 +1,5 @@
 from app.db.enums import UserRole
-from tests.conftest import auth_headers, register_user, unique_email
+from tests.conftest import auth_headers, register_user, unique_email, webhook_headers
 from tests.test_admin_permissions import promote
 
 
@@ -23,6 +23,7 @@ async def _paid_subscription(client, admin_tokens, user_tokens) -> str:
     await client.post(
         "/api/v1/payments/webhook/mock",
         json={"event": {"provider_payment_id": f"mock_{payment_id}", "status": "SUCCESS"}},
+        headers=webhook_headers(),
     )
     return payment_id
 

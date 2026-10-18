@@ -72,6 +72,9 @@ export async function POST(request: NextRequest) {
 
   const refreshToken = data.refresh_token;
   const response = NextResponse.json({ data: { access_token: data.access_token, expires_in: data.expires_in } });
-  response.cookies.set(COOKIE_NAME, refreshToken, cookieOptions(data.expires_in * 2));
+  // The refresh cookie must live as long as the refresh token (rotated on each
+  // refresh call), not the short-lived access token.
+  const refreshMaxAge = data.refresh_expires_in ?? 60 * 60 * 24 * 30;
+  response.cookies.set(COOKIE_NAME, refreshToken, cookieOptions(refreshMaxAge));
   return response;
 }

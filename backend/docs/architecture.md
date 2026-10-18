@@ -136,8 +136,10 @@ Returns `{candidate_user_id, score, reason_codes}`. The `ScoringEngine` is a rep
 
 ## 8. Payment / Verification Architecture
 
-- `PaymentProvider` protocol (Stripe/Razorpay pluggable); webhooks are the only source of truth.
-- Webhook signature verified; idempotent by `provider_payment_id`; `payments` + `subscriptions`/`job_verifications` transition atomically.
+- `PaymentProvider` protocol (mock for dev/demo, Stripe for production); webhooks are the only source of truth.
+- Webhook requests are verified from the **raw request body** (`parse_webhook(raw_body, headers)`): Stripe via HMAC signature, mock via a shared-secret header (`x-mock-webhook-secret`). Rejected when verification fails.
+- Production boot fails fast when `PAYMENT_PROVIDER=mock` (unless `ALLOW_MOCK_PAYMENTS=true` for demos), when the JWT secret is default/short, or when Stripe keys are missing.
+- Idempotent by `provider_payment_id`; `payments` + `subscriptions`/`job_verifications` transition atomically.
 - Pricing from `app_config` table (keys `pricing.local_job_verification=119`, `pricing.nri_job_verification=199`, with legacy-key and settings fallbacks) — never hardcoded.
 - `job_verifications` status machine: `PENDING_PAYMENT -> UNDER_REVIEW -> VERIFIED | REJECTED`. Only VERIFIER/ADMIN roles transition verification status.
 

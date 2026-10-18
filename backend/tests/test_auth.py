@@ -8,6 +8,8 @@ class TestRegistration:
         data = await register_user(client)
         assert "access_token" in data
         assert "refresh_token" in data
+        assert data["expires_in"] > 0
+        assert data["refresh_expires_in"] > data["expires_in"]
 
     async def test_register_duplicate_email_fails(self, client):
         email = unique_email()

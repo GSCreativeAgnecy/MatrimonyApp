@@ -124,7 +124,9 @@ Everything under `NEXT_PUBLIC_*` is shipped to the browser. **Never** put
   code. No fake client-side 2FA.
 - **Access token** stays in browser memory (never localStorage).
 - **Refresh token** is stored by the Next.js BFF in an **HttpOnly, SameSite=Strict**
-  cookie (`mm_admin_refresh`) and rotated on every `/api/auth/refresh` call.
+  cookie (`mm_admin_refresh`) and rotated on every `/api/auth/refresh` call. The
+  cookie's lifetime follows the backend's `refresh_expires_in` (refresh-token
+  lifetime), not the short-lived access token.
 - **Auto-refresh**: the API client refreshes once on a 401 and retries.
 - **Logout** revokes the refresh token server-side and clears the cookie.
 - Admins are the `User` table with role in

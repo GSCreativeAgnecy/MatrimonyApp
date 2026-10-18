@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.errors import ForbiddenError, UnauthorizedError
+from app.config.settings import settings
 from app.db.models import User
 from app.db.session import SessionLocal
 from app.repositories.user_repo import UserRepository
@@ -103,8 +104,21 @@ def rate_limit(bucket: str, key_func: Callable[[Request], str] | None = None):
 
 
 async def get_request_context(request: Request) -> dict:
+    """Best-effort client IP for audit logging.
+
+    ``X-Forwarded-For`` is only trusted when ``TRUSTED_PROXY_COUNT`` is set to
+    the number of proxies in front of the app (e.g. 2 behind edge proxy + nginx).
+    The client address is then read at that fixed offset from the right, where
+    each trusted proxy appends the address it saw. With no trusted proxies the
+    header is ignored entirely (it is spoofable by clients).
+    """
     ip = request.client.host if request.client else None
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        ip = forwarded.split(",")[0].strip()
+    if forwarded and settings.TRUSTED_PROXY_COUNT > 0:
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        index = len(parts) - settings.TRUSTED_PROXY_COUNT
+        if 0 <= index < len(parts):
+            ip = parts[index]
+        elif parts:
+            ip = parts[0]
     return {"ip": ip, "user_agent": request.headers.get("user-agent")}

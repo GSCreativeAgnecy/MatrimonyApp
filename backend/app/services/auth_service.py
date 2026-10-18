@@ -136,6 +136,7 @@ class AuthService:
             "access_token": access_token,
             "refresh_token": refresh_token,
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "refresh_expires_in": settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         }
 
     async def refresh(self, refresh_token: str) -> dict:
