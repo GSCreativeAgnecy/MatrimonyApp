@@ -25,7 +25,7 @@
     --ring: 262 83% 58%;
     --sidebar: 224 71% 4%;
     --sidebar-foreground: 0 0% 100%;
-    --sidebar-muted: 224 10% 22%;
+    --sidebar-muted: 215 20% 72%;
     --radius: 0.5rem;
   }
 
@@ -51,7 +51,7 @@
     --ring: 262 83% 62%;
     --sidebar: 224 71% 4%;
     --sidebar-foreground: 213 31% 91%;
-    --sidebar-muted: 224 20% 16%;
+    --sidebar-muted: 215 20% 66%;
   }
 }
 
