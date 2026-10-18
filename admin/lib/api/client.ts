@@ -50,8 +50,8 @@ async function refreshAccessToken(): Promise<string | null> {
     refreshInFlight = fetch("/api/auth/refresh", { method: "POST", credentials: "same-origin" })
       .then(async (res) => {
         if (!res.ok) return null;
-        const body = (await res.json()) as { access_token?: string };
-        return body.access_token ?? null;
+        const body = (await res.json()) as { data?: { access_token?: string } };
+        return body.data?.access_token ?? null;
       })
       .finally(() => {
         refreshInFlight = null;
