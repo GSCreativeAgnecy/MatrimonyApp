@@ -137,6 +137,18 @@ python -m app.seed
 
 Seeds languages, religions, castes, countries, states, education levels, occupations, interests, subscription plans and verification pricing.
 
+Optionally creates a development admin when **both** `DEV_ADMIN_EMAIL` and `DEV_ADMIN_PASSWORD`
+are set as environment variables (never set them in production). The local `run.cmd`
+launcher uses:
+
+```ini
+DEV_ADMIN_EMAIL=admin@example.com
+DEV_ADMIN_PASSWORD=ChangeMe123!
+```
+
+That account is created as a `SUPER_ADMIN`. The password must be at least 8 characters
+with one uppercase letter and one digit.
+
 ### 7. Start the API
 
 ```bash
